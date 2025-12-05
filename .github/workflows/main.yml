@@ -1,0 +1,72 @@
+# Имя вашего рабочего процесса
+name: Node.js CI/CD Pipeline
+
+# Событие, которое запускает пайплайн
+on:
+  push:
+    # Запускать пайплайн при пуше в основную ветку
+    branches: [ main ] 
+  pull_request:
+    # Запускать пайплайн при создании Pull Request в основную ветку
+    branches: [ main ]
+  # Добавляет возможность запускать вручную из интерфейса GitHub
+  workflow_dispatch:
+
+# Определение задач (jobs), которые будут выполняться
+jobs:
+  build_and_test:
+    # Запуск на стандартной виртуальной машине Ubuntu
+    runs-on: ubuntu-latest
+
+    # Стратегия тестирования на разных версиях Node.js
+    strategy:
+      matrix:
+        node-version: [18.x] # Используем версию 18
+
+    steps:
+    - name: ⬇️ Checkout Code
+      uses: actions/checkout@v4
+      
+    - name: 🛠️ Setup Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ matrix.node-version }}
+        # Кеширование зависимостей для ускорения
+        cache: 'npm' 
+
+    - name: ⚙️ Install Dependencies
+      # Используем npm ci для установки зависимостей, что надежнее, чем npm install 
+      # (требует package-lock.json)
+      run: npm ci
+
+    - name: 🧪 Run Tests
+      # Запускается скрипт 'test' из package.json
+      run: npm test
+
+  build_and_push_docker:
+    # Зависит от успешного выполнения 'build_and_test'
+    needs: build_and_test
+    runs-on: ubuntu-latest
+    
+    # Этот шаг будет выполняться только при пуше в ветку 'main'
+    if: github.ref == 'refs/heads/main' 
+
+    steps:
+    - name: ⬇️ Checkout Code
+      uses: actions/checkout@v4
+      
+    - name: 🔑 Login to Docker Registry
+      # Используем официальный Action для входа в любой Docker Registry
+      uses: docker/login-action@v3
+      with:
+        registry: registry.gitlab.com # Например, используем GitLab Registry
+        # Переменные GitHub Secrets используются для безопасного хранения учетных данных
+        username: ${{ secrets.DOCKER_USERNAME }}
+        password: ${{ secrets.DOCKER_PASSWORD }}
+        
+    - name: 🏗️ Build and Push Docker Image
+      uses: docker/build-push-action@v5
+      with:
+        context: . # Ищем Dockerfile в корне
+        push: true # Разрешить отправку образа
+        tags: registry.gitlab.com/your-username/ci-cd-demo:latest
